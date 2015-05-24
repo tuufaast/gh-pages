@@ -1,0 +1,110 @@
+---
+title: "Practical Machine Learning - assignment"
+author: Kirsti Laurila
+output: html_document
+---
+
+In the assignment we were supposed to build a model that predicts how people perform their exercise in gym. There are 5 classes to predict, A,B,C,D,E. 
+
+We first load libraries. As we are going to fit randomFores,GBM and rpart models, we need to attach all of them.
+
+```{r, message=F, warning=F}
+library(caret)
+library(ggplot2)
+library(rpart)
+library(randomForest)
+library(gbm)
+```
+
+Then, we read in the data that should be located in working directory,
+
+
+```{r}
+train_data <- read.csv(file="pml-training.csv")
+```
+
+Next, we modify the training data. We won't use timestamps and other metadata as predictos, so we first omit the 7 first columns containing this data. We will also include only the mean values of the measurements, so kurtosis, minimum, maximum, variance, standard deviation, amplitude and skewness variables will all be removed.  
+
+```{r}
+col_names <- colnames(train_data)
+remove_cols <- col_names[1:7]
+remove_cols <- c(remove_cols,
+grep("^kurtosis|^min|^max|^var|^stddev|^amplitude|skewness",
+col_names, value=TRUE))
+```
+
+We then study, which columns have more than 50% of valus missing. These columns will be omitted as well. We finally end up with the following list of predictors to use.
+
+```{r}
+remove_too_many_nas<-colnames(train_data)[apply(train_data,2,function(x)
+                                          length(which(is.na(x)))/length(x)>0.5)]
+remove_cols=c(remove_too_many_nas,remove_cols)
+#these are the column names to include
+in_cols <- setdiff(col_names,remove_cols)
+in_cols
+```
+
+Next, we need to select these columns and we divide the training data into training and testing sets. We include 60% of data in the training set. We see below how many rows in both training and testing sets have and also that both of them have 53 columns e.g. 52 predictors as the last column is the response variable, classe. 
+
+
+```{r}
+train_data <- train_data[,in_cols]
+in_train <- createDataPartition(y=train_data$classe, p=0.6, list=FALSE)
+training <- train_data[in_train,]
+testing <- train_data[-in_train,]
+rbind(c("training", dim(training)),c("testing",dim(testing)))
+```
+
+Next, we want to study the dataset a bit. So we plot histograms of predictors. Here, only few of them are shown. 
+
+```{r}
+par(mfrow=c(2,2))
+hist(training$yaw_belt, 20, main="Yaw of belt values", xlab="yaw_belt")
+hist(training$yaw_dumbbell, 20, main="Yaw of bumbbel values", xlab="yaw_dumppel")
+hist(training$yaw_arm, 20, main="Yaw of arm values", xlab="yaw_arm")
+hist(training$yaw_forearm, 20, main="Yaw of forearm values", xlab="yaw_forearm")
+
+```
+
+We see that the scale is similar in all these predictors but distributions differ. However, as we are using tree-based methods, preprocessing is not necessary and we don't perform it. 
+
+Next, we fit random forest and treemodel. For random forest, 10 fold cross validation is used. For tree model, the default value is also 10-fold cross-validation. 
+
+```{r, cache=TRUE}
+
+fitControl <- trainControl(## 10-fold CV
+  method = "repeatedcv",
+  number = 10,
+  ## repeated ten times
+  repeats = 10)
+
+modFitRf<-train(classe~., method="rf",data=training, prox=TRUE,
+                 trainControl=fitControl)
+
+
+modFitRpart<-train(classe~., method="rpart",data=training)
+```
+
+We then check how accurate the models are. By using the testing set. 
+
+```{r}
+accuracies <- c(length(which(predict(modFitRf, testing)==testing$classe))/length(testing$classe),
+length(which(predict(modFitRpart, testing)==testing$classe))/length(testing$classe))
+```
+We see that the random forest model is much more accurate so we choose it. Also, we estimate the out of sample error to be
+
+```{r}
+1-accuracies[1]
+```
+
+Finally, we want to see, which variables contribute to the predictions at most, by checkin variance importance. Here one can see the plot of the variance importance of each predictor. 
+
+```{r}
+varImportance <- varImp(modFitRf)
+plot(varImportance)
+```
+
+Last, we still  check the ten most important predictors
+```{r}
+varImportance
+```
